@@ -198,6 +198,7 @@
 #define COUNTER_FREQUENCY		8000000 /* 8MHz */
 
 #define IMX_WDOG_B_RESET
+#define DEBUG_CONSOLE                   0
 
 #define MAX_IO_HANDLES			3U
 #define MAX_IO_DEVICES			2U
