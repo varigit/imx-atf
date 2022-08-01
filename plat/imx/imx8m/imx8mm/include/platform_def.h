@@ -188,3 +188,4 @@
 #define MAX_IO_HANDLES			3U
 #define MAX_IO_DEVICES			2U
 #define MAX_IO_BLOCK_DEVICES		1U
+#define DEBUG_CONSOLE                   0
