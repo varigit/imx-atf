@@ -245,7 +245,7 @@ SECTIONS {
      */
 #if !SEPARATE_RWDATA_REGION
     __RW_END__ = .;
-#endif / *SEPARATE_RWDATA_REGION */ 
+#endif /* SEPARATE_RWDATA_REGION */
     __BL31_END__ = .;
 
     ASSERT(. <= BL31_LIMIT, "BL31 image has exceeded its limit.")
