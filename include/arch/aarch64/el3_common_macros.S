@@ -105,7 +105,7 @@
 	 * All fields are architecturally UNKNOWN on reset.
 	 * ---------------------------------------------------------------------
 	 */
-	mov_imm x0, CPTR_EL3_RESET_VAL
+	mov_imm x0, (CPTR_EL3_RESET_VAL & ~(TCPAC_BIT | TFP_BIT))
 	msr	cptr_el3, x0
 
 	/*
