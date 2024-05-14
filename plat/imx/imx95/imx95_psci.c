@@ -85,11 +85,21 @@
 #define DEBUG_WAKEUP_MASK BIT(1)
 #define EVENT_WAKEUP_MASK BIT(0)
 
+#define SCMI_IMX_SYS_POWER_STATE_MODE_MASK	0xC0000000U
+#define SM_ACTIVE		BIT(0)
+#define FRO_ACTIVE		BIT(1)
+#define SYSCTR_ACTIVE		BIT(2)
+#define PMIC_STBY_INACTIVE	BIT(3)
+#define OSC24M_ACTIVE		BIT(4)
+#define DRAM_ACTIVE_MASK	BIT(5)
+
 #define GPIO_S_BASE(x)		((x) | BIT(28))
 #define GPIO_CTRL_REG_NUM	U(8)
 #define GPIO_PIN_MAX_NUM	U(32)
 #define GPIO_CTX(addr, num)	\
 	{.base = (addr), .pin_num = (num), }
+
+#define NETC_IREC_PCI_INT_X0	304
 
 extern void* imx95_scmi_handle;
 
@@ -154,15 +164,17 @@ static uintptr_t secure_entrypoint;
  * IRQ masks used to check if any of the below IRQ is
  * enabled as the wakeup source:
  * lpuart3-8: 64-67, flexcan2:38, usdhc1-2:86-87,usdhc3:191
- * flexcan3: 40, flexcan4: 42， flexcan5: 44; 
+ * flexcan3: 40, flexcan4: 42， flexcan5: 44, netc: 304;
  */
-static uint32_t wakeupmix_irq_mask[IMR_NUM] = {
+static uint32_t wakeup_irq_mask[IMR_NUM] = {
 	0x0, 0x1540, 0xc0000f, 0x0,
-	0x0, 0x80000000, 0x0, 0x0
+	0x0, 0x80000000, 0x0, 0x0,
+	0x0, 0x10000,
 };
 
 static bool gpio_wakeup;
 static bool has_wakeup_irq;
+static bool has_netc_irq;
 
 static struct qchannel_hsk_config {
 	const uint32_t per_idx;
@@ -341,6 +353,8 @@ void imx_set_sys_wakeup(uint32_t last_core, bool pdn)
 		mode = SCMI_CPU_SLEEP_WAIT;
 		/* clear the wakeupmix irq enabled flag */
 		has_wakeup_irq = false;
+		/* clear the netcmix irq enabled flag */
+		has_netc_irq = false;
 	}
 
 	/*
@@ -359,8 +373,13 @@ void imx_set_sys_wakeup(uint32_t last_core, bool pdn)
 			is_wakeup_source(irq_mask[i], i);
 		}
 
-		if ((irq_mask[i] & wakeupmix_irq_mask[i]) != wakeupmix_irq_mask[i]) {
-			has_wakeup_irq = true;
+		if ((irq_mask[i] & wakeup_irq_mask[i]) != wakeup_irq_mask[i]) {
+			/* Check whether netc irec pci int_x0 is allowed for wakeup */
+			if ((i == (NETC_IREC_PCI_INT_X0 >> 5)) &&
+			    (wakeup_irq_mask[i] & (1 << (NETC_IREC_PCI_INT_X0 % 32))))
+				has_netc_irq = true;
+			else
+				has_wakeup_irq = true;
 		}
 	}
 
@@ -509,11 +528,13 @@ void imx_pwr_domain_off(const psci_power_state_t *target_state)
 				 SCMI_GPC_WAKEUP, SCMI_CPU_SLEEP_SUSPEND);
 }
 
+
 void imx_pwr_domain_suspend(const psci_power_state_t *target_state)
 {
 	uint64_t mpidr = read_mpidr_el1();
 	uint32_t core_id = MPIDR_AFFLVL1_VAL(mpidr);
 	uint32_t l3_retn = 0;
+	uint32_t sys_mode;
 	bool keep_wakupmix_on = false;
 
 	/* do cpu level config */
@@ -567,6 +588,15 @@ void imx_pwr_domain_suspend(const psci_power_state_t *target_state)
 				       cpu_info[IMX95_A55P_IDX].cpu_id,
 				       sizeof(cpu_lpm_cfg)/sizeof(struct scmi_lpm_config),
 				       cpu_lpm_cfg);
+
+
+		sys_mode = SCMI_IMX_SYS_POWER_STATE_MODE_MASK;
+		if (has_netc_irq) {
+			sys_mode |= OSC24M_ACTIVE;
+			scmi_sys_pwr_state_set(imx95_scmi_handle,
+					       SCMI_SYS_PWR_FORCEFUL_REQ,
+					       sys_mode);
+		}
 	}
 }
 
@@ -575,9 +605,16 @@ void imx_pwr_domain_suspend_finish(const psci_power_state_t *target_state)
 	uint64_t mpidr = read_mpidr_el1();
 	uint32_t core_id = MPIDR_AFFLVL1_VAL(mpidr);
 	uint32_t val;
+	uint32_t sys_mode;
 
 	/* system level */
 	if (is_local_state_off(SYSTEM_PWR_STATE(target_state))) {
+		sys_mode = SCMI_IMX_SYS_POWER_STATE_MODE_MASK;
+		if (has_netc_irq) {
+			scmi_sys_pwr_state_set(imx95_scmi_handle,
+					       SCMI_SYS_PWR_FORCEFUL_REQ,
+					       sys_mode);
+		}
 		nocmix_pwr_up(core_id);
 		gpio_restore(wakeupmix_gpio_ctx, 4);
 		struct scmi_lpm_config cpu_lpm_cfg[] = {
