@@ -184,6 +184,7 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 {
 #if VAR_ENABLE_IMX_UART
 	unsigned int console_base = IMX_BOOT_UART_BASE;
+	static console_t console;
 #endif
 	unsigned int val;
 	int i;
